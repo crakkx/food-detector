@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Model checkpoints (optional)
+*.pt
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
