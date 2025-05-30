@@ -2,7 +2,7 @@
 Food Tracker - Main Flask Application
 Simplified food detection and calorie tracking using YOLOv8
 """
-
+import os
 from flask import Flask, render_template, Response, jsonify, request
 import cv2
 import json
@@ -154,4 +154,5 @@ def delete_detection(detection_id):
         }), 404
 
 if __name__ == '__main__':
-    app.run(debug=Config.DEBUG, host='0.0.0.0')
+    port = int(os.environ.get("PORT", 5000)) 
+    app.run(debug=Config.DEBUG, host='0.0.0.0', port=port)
