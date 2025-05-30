@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}Food Tracker - Detect{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="h3 mb-4">Detect Food</h1>
+        
+        <!-- Camera Feed Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-0">
+                <div class="position-relative" id="video-container">
+                    <!-- Clean video feed with no overlays -->
+                    <img id="video-feed" src="{{ url_for('video_feed') }}" 
+                         class="w-100" alt="Camera Feed"
+                         onerror="handleVideoError()"
+                         onload="handleVideoLoad()">
+                    
+                    <!-- Loading overlay -->
+                    <div id="video-loading" class="position-absolute top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center bg-dark bg-opacity-50">
+                        <div class="spinner-border text-light" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Detection notification (initially hidden) -->
+                    <div id="detection-notification" class="position-absolute bottom-0 start-0 w-100 p-3 d-none">
+                        <div class="alert alert-light shadow-sm mb-0 d-flex justify-content-between align-items-center">
+                            <div>
+                                <span id="detected-food-name">Food</span> detected
+                            </div>
+                            <button id="log-food-btn" class="btn btn-primary btn-sm">
+                                Add to Log
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recently Added Card -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Recently Added</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush" id="recent-items">
+                    <!-- Recent items will be loaded here -->
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for notifications -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="notification-toast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="toast-message">
+                Food logged successfully!
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global variables
+let currentDetection = null;
+let detectionTimeout = null;
+let toastInstance = null;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize toast
+    toastInstance = new bootstrap.Toast(document.getElementById('notification-toast'));
+    
+    // Set up log button handler
+    document.getElementById('log-food-btn').addEventListener('click', logDetectedFood);
+    
+    // Reset detection state
+    currentDetection = null;
+    hideDetectionNotification();
+    
+    // Start detection polling
+    startDetectionPolling();
+    
+    // Load recent items
+    loadRecentItems();
+});
+
+// Handle video loading
+function handleVideoLoad() {
+    document.getElementById('video-loading').classList.add('d-none');
+}
+
+// Handle video error
+function handleVideoError() {
+    document.getElementById('video-loading').innerHTML = 
+        '<div class="text-white text-center p-3">Error loading camera feed. Please refresh the page.</div>';
+}
+
+// Start polling for detections
+function startDetectionPolling() {
+    // Poll for detections every 300ms (reduced from 500ms)
+    setInterval(checkForDetections, 300);
+}
+
+// Check for new detections
+function checkForDetections() {
+    fetch('/get_pending_detections')
+        .then(response => response.json())
+        .then(data => {
+            if (data.detections && data.detections.length > 0) {
+                // Take the first detection with highest confidence
+                const detection = data.detections[0];
+                handleDetection(detection);
+            } else {
+                // No detections, hide notification if showing
+                if (currentDetection) {
+                    hideDetectionNotification();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking for detections:', error);
+        });
+}
+
+// Handle a new detection
+function handleDetection(detection) {
+    // If this is a new detection or different from current
+    if (!currentDetection || currentDetection.food !== detection.food) {
+        // Clear any existing timeout
+        if (detectionTimeout) {
+            clearTimeout(detectionTimeout);
+        }
+        
+        // Set new timeout - show notification after 0.5 seconds (reduced from 2 seconds)
+        detectionTimeout = setTimeout(() => {
+            showDetectionNotification(detection);
+        }, 500);
+        
+        // Update current detection
+        currentDetection = detection;
+    }
+}
+
+// Show detection notification
+function showDetectionNotification(detection) {
+    const notification = document.getElementById('detection-notification');
+    const foodNameElement = document.getElementById('detected-food-name');
+    
+    foodNameElement.textContent = detection.food;
+    notification.classList.remove('d-none');
+}
+
+// Hide detection notification
+function hideDetectionNotification() {
+    document.getElementById('detection-notification').classList.add('d-none');
+    currentDetection = null;
+    
+    if (detectionTimeout) {
+        clearTimeout(detectionTimeout);
+        detectionTimeout = null;
+    }
+}
+
+// Log detected food
+function logDetectedFood() {
+    if (!currentDetection) return;
+    
+    fetch('/log_detection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            food: currentDetection.food,
+            confidence: currentDetection.confidence
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Show success toast
+        document.getElementById('toast-message').textContent = 
+            `${currentDetection.food} logged successfully!`;
+        toastInstance.show();
+        
+        // Hide notification
+        hideDetectionNotification();
+        
+        // Wait 1 second then redirect to home page
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 1000);
+    })
+    .catch(error => {
+        console.error('Error logging detection:', error);
+    });
+}
+
+// Load recent items
+function loadRecentItems() {
+    fetch('/get_recent_detections')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('recent-items');
+            
+            if (data.items && data.items.length > 0) {
+                let html = '';
+                
+                data.items.slice(0, 5).forEach(item => {
+                    const time = new Date(item.timestamp).toLocaleTimeString();
+                    html += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="fw-medium">${item.food}</span>
+                            <small class="text-muted d-block">${time}</small>
+                        </div>
+                        <span class="badge bg-light text-dark">${item.calories} cal</span>
+                    </li>`;
+                });
+                
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<li class="list-group-item text-center text-muted">No items logged yet</li>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading recent items:', error);
+        });
+}
+</script>
+{% endblock %}
